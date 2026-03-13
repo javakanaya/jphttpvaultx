@@ -29,13 +29,13 @@ var vault = jphttpvaultx.New(
 
 ## Configuration Options
 
-| Option | Default | Description |
-|---|---|---|
-| `WithProxyAddr(addr)` | `http://127.0.0.1:8200` | Override the extension proxy address |
-| `WithKVMount(mount)` | `secret` | KV v2 secrets engine mount path |
-| `WithNamespace(ns)` | _(none)_ | Vault Enterprise namespace (`X-Vault-Namespace`) |
-| `WithTimeout(d)` | `5s` | HTTP client timeout |
-| `WithHTTPClient(hc)` | _(built-in)_ | Bring your own `*http.Client` (custom TLS, transport, etc.) |
+| Option                | Default                 | Description                                                 |
+| --------------------- | ----------------------- | ----------------------------------------------------------- |
+| `WithProxyAddr(addr)` | `http://127.0.0.1:8200` | Override the extension proxy address                        |
+| `WithKVMount(mount)`  | `secret`                | KV v2 secrets engine mount path                             |
+| `WithNamespace(ns)`   | _(none)_                | Vault Enterprise namespace (`X-Vault-Namespace`)            |
+| `WithTimeout(d)`      | `5s`                    | HTTP client timeout                                         |
+| `WithHTTPClient(hc)`  | _(built-in)_            | Bring your own `*http.Client` (custom TLS, transport, etc.) |
 
 ---
 
@@ -115,9 +115,19 @@ region := m["region"].(string)
 
 ---
 
+### `GetSecretKey` — fetch a dedicated `secret_key` field
+
+Reads the `secret_key` field from `<mount>/data/<path>`. Accepts both flat and `secrets`-wrapped layouts (see [Secret Layouts](#secret-layouts) below).
+
+```go
+signingKey, err := vault.GetSecretKey(ctx, "jwt/signing")
+```
+
+---
+
 ### `GetDatabaseCredentials` — typed DB credentials
 
-Reads `<mount>/data/database/<service>` and expects `username` and `password` keys.
+Reads `<mount>/data/<path>` and returns a `*DatabaseCredentials` with `Username` and `Password`. Accepts both flat and `secrets`-wrapped layouts.
 
 ```go
 creds, err := vault.GetDatabaseCredentials(ctx, "payments-db")
@@ -133,26 +143,41 @@ db, err := sql.Open("postgres", fmt.Sprintf(
 
 ---
 
-### `PutSecret` — write or update a secret
+### `GetThirdPartyAppCredential` — typed third-party credentials
+
+Reads `<mount>/data/<path>` and returns a `*ThirdPartyAppCredentials` with `Email` and `Password`. Accepts both flat and `secrets`-wrapped layouts.
 
 ```go
-err := vault.PutSecret(ctx, "my-service/config", map[string]any{
-    "api_key": "new-value",
-    "region":  "ap-southeast-1",
-})
+creds, err := vault.GetThirdPartyAppCredential(ctx, "stripe")
+if err != nil {
+    log.Fatal(err)
+}
+log.Printf("stripe user: %s", creds.Email)
 ```
 
 ---
 
-### `DeleteSecret` — delete a secret
+## Secret Layouts
 
-```go
-err := vault.DeleteSecret(ctx, "my-service/config")
+All typed helpers (`GetDatabaseCredentials`, `GetThirdPartyAppCredential`, `GetSecretKey`) accept **both** flat and `secrets`-wrapped Vault secret layouts:
+
+**Flat** — fields stored directly at the top level:
+
+```json
+{ "username": "admin", "password": "s3cr3t" }
 ```
+
+**Wrapped** — fields nested under a `secrets` key:
+
+```json
+{ "secrets": { "username": "admin", "password": "s3cr3t" } }
+```
+
+If the `secrets` key is present and contains a map, the inner map is used. Otherwise the top-level data is used as-is.
 
 ---
 
-## Vault Secret Structure
+## Vault KV v2 Envelope
 
 This client targets **KV v2** secrets. The Vault API response envelope looks like:
 
@@ -175,8 +200,8 @@ GET /v1/<mount>/data/<path>
 
 ## Environment Variables (recommended)
 
-| Variable | Description |
-|---|---|
-| `VAULT_KV_MOUNT` | KV v2 mount name (e.g. `static-secret`) |
-| `VAULT_NAMESPACE` | Vault Enterprise namespace (omit for OSS) |
+| Variable           | Description                                               |
+| ------------------ | --------------------------------------------------------- |
+| `VAULT_KV_MOUNT`   | KV v2 mount name (e.g. `static-secret`)                   |
+| `VAULT_NAMESPACE`  | Vault Enterprise namespace (omit for OSS)                 |
 | `VAULT_PROXY_ADDR` | Override proxy address (default: `http://127.0.0.1:8200`) |
